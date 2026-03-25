@@ -169,78 +169,103 @@ export const useGameStore = create<GameStore>((set) => ({
   },
 
   startGame: async (lobbyId: string) => {
-    const startGameFn = httpsCallable(functions, 'startGame');
-    await startGameFn({ lobbyId });
+    try {
+      const startGameFn = httpsCallable(functions, 'startGame');
+      await startGameFn({ lobbyId });
+    } catch (error) {
+      console.error('Error starting game:', error);
+      alert('Failed to start game. Make sure Cloud Functions are deployed.');
+    }
   },
 
   addBot: async (lobbyId: string, difficulty: string) => {
-    const lobbyRef = ref(db, `lobbies/${lobbyId}`);
-    const snapshot = await getDb(lobbyRef);
-    if (!snapshot.exists()) return;
+    try {
+      const lobbyRef = ref(db, `lobbies/${lobbyId}`);
+      const snapshot = await getDb(lobbyRef);
+      if (!snapshot.exists()) return;
 
-    const lobby = snapshot.val();
-    const players = [...(lobby.players || [])];
-    players.push({
-      id: `bot-${Math.random().toString(36).substring(2, 11)}`,
-      name: `Bot (${difficulty})`,
-      isBot: true,
-      botDifficulty: difficulty as 'Easy' | 'Medium' | 'Hard' | 'Cheater'
-    });
+      const lobby = snapshot.val();
+      const players = [...(lobby.players || [])];
+      players.push({
+        id: `bot-${Math.random().toString(36).substring(2, 11)}`,
+        name: `Bot (${difficulty})`,
+        isBot: true,
+        botDifficulty: difficulty as 'Easy' | 'Medium' | 'Hard' | 'Cheater'
+      });
 
-    await update(lobbyRef, { players });
+      await update(lobbyRef, { players });
+    } catch (error) {
+      console.error('Error adding bot:', error);
+    }
   },
 
   kickPlayer: async (lobbyId: string, playerId: string) => {
-     const lobbyRef = ref(db, `lobbies/${lobbyId}`);
-     const snapshot = await getDb(lobbyRef);
-     if (!snapshot.exists()) return;
+     try {
+       const lobbyRef = ref(db, `lobbies/${lobbyId}`);
+       const snapshot = await getDb(lobbyRef);
+       if (!snapshot.exists()) return;
 
-     const lobby = snapshot.val();
-     const players = (lobby.players || []).filter((p: any) => p.id !== playerId);
-     await update(lobbyRef, { players });
+       const lobby = snapshot.val();
+       const players = (lobby.players || []).filter((p: any) => p.id !== playerId);
+       await update(lobbyRef, { players });
+     } catch (error) {
+       console.error('Error kicking player:', error);
+     }
   },
 
   playCard: async (gameId: string, cardId: string, declaredColor?: Color) => {
-    const playEventFn = httpsCallable(functions, 'playEvent');
-    const user = useAuthStore.getState().user;
-    if (!user) return;
+    try {
+      const playEventFn = httpsCallable(functions, 'playEvent');
+      const user = useAuthStore.getState().user;
+      if (!user) return;
 
-    await playEventFn({
-      gameId,
-      event: {
-        type: 'CARD_PLAYED',
-        playerId: user.id,
-        cardId,
-        declaredColor
-      }
-    });
+      await playEventFn({
+        gameId,
+        event: {
+          type: 'CARD_PLAYED',
+          playerId: user.id,
+          cardId,
+          declaredColor
+        }
+      });
+    } catch (error) {
+      console.error('Error playing card:', error);
+    }
   },
 
   drawCard: async (gameId: string) => {
-    const playEventFn = httpsCallable(functions, 'playEvent');
-    const user = useAuthStore.getState().user;
-    if (!user) return;
+    try {
+      const playEventFn = httpsCallable(functions, 'playEvent');
+      const user = useAuthStore.getState().user;
+      if (!user) return;
 
-    await playEventFn({
-      gameId,
-      event: {
-        type: 'DRAW_CARD',
-        playerId: user.id
-      }
-    });
+      await playEventFn({
+        gameId,
+        event: {
+          type: 'DRAW_CARD',
+          playerId: user.id
+        }
+      });
+    } catch (error) {
+      console.error('Error drawing card:', error);
+    }
   },
 
   callUno: async (gameId: string) => {
-    const playEventFn = httpsCallable(functions, 'playEvent');
-    const user = useAuthStore.getState().user;
-    if (!user) return;
+    try {
+      const playEventFn = httpsCallable(functions, 'playEvent');
+      const user = useAuthStore.getState().user;
+      if (!user) return;
 
-    await playEventFn({
-      gameId,
-      event: {
-        type: 'CALL_UNO',
-        playerId: user.id
-      }
-    });
+      await playEventFn({
+        gameId,
+        event: {
+          type: 'CALL_UNO',
+          playerId: user.id
+        }
+      });
+    } catch (error) {
+      console.error('Error calling UNO:', error);
+    }
   }
 }));
