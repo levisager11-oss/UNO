@@ -109,16 +109,18 @@ export const useGameStore = create<GameStore>((set) => ({
     if (!user) return;
     
     const lobbyRef = push(ref(db, 'lobbies'));
-    await setDb(lobbyRef, {
+    const lobbyData = {
       name,
       hostId: user.id,
-      status: 'waiting',
+      status: 'waiting' as const,
       players: [{
         id: user.id,
         name: user.username,
         isBot: false
       }]
-    });
+    };
+    await setDb(lobbyRef, lobbyData);
+    set({ currentLobby: { ...lobbyData, id: lobbyRef.key! } });
   },
 
   joinLobby: async (lobbyId: string) => {
@@ -131,15 +133,16 @@ export const useGameStore = create<GameStore>((set) => ({
 
     const lobby = snapshot.val();
     const players = [...(lobby.players || [])];
-    if (players.find(p => p.id === user.id)) return;
+    if (!players.find(p => p.id === user.id)) {
+      players.push({
+        id: user.id,
+        name: user.username,
+        isBot: false
+      });
+      await update(lobbyRef, { players });
+    }
 
-    players.push({
-      id: user.id,
-      name: user.username,
-      isBot: false
-    });
-
-    await update(lobbyRef, { players });
+    set({ currentLobby: { ...lobby, players, id: lobbyId } });
   },
 
   leaveLobby: async (lobbyId: string) => {
