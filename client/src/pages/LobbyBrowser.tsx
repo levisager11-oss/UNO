@@ -6,16 +6,13 @@ import { LogOut, Play, Users } from 'lucide-react';
 
 export default function LobbyBrowser() {
   const { user, logout } = useAuthStore();
-  const { connect, disconnect, lobbies, createLobby, joinLobby, currentLobby } = useGameStore();
+  const { listenToLobbies, lobbies, createLobby, joinLobby, currentLobby } = useGameStore();
   const navigate = useNavigate();
 
   useEffect(() => {
-    connect();
-    return () => {
-      // Don't disconnect here because we want to keep connection alive when moving to lobby/game
-      // Or maybe we do? Let's just not disconnect on unmount of LobbyBrowser
-    };
-  }, [connect]);
+    const unsubscribe = listenToLobbies();
+    return () => unsubscribe();
+  }, [listenToLobbies]);
 
   useEffect(() => {
     if (currentLobby) {
@@ -31,7 +28,7 @@ export default function LobbyBrowser() {
 
   const handleJoinLobby = (lobbyId: string) => {
     if (user) {
-      joinLobby(lobbyId, user.username);
+      joinLobby(lobbyId);
     }
   };
 
@@ -50,7 +47,6 @@ export default function LobbyBrowser() {
             </div>
             <button 
               onClick={() => {
-                disconnect();
                 logout();
               }}
               className="flex items-center gap-2 bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600 transition"

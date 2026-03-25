@@ -1,6 +1,6 @@
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { useAuthStore } from './store/authStore';
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import LobbyBrowser from './pages/LobbyBrowser';
@@ -8,39 +8,20 @@ import LobbyRoom from './pages/LobbyRoom';
 import GameRoom from './pages/GameRoom';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const token = useAuthStore(state => state.token);
-  if (!token) return <Navigate to="/login" replace />;
+  const user = useAuthStore(state => state.user);
+  const loading = useAuthStore(state => state.loading);
+  
+  if (loading) return <div className="min-h-screen flex items-center justify-center bg-gray-100">Loading...</div>;
+  if (!user) return <Navigate to="/login" replace />;
   return <>{children}</>;
 }
 
 function App() {
-  const { token, setAuth, logout } = useAuthStore();
-  const [loading, setLoading] = useState(true);
+  const { init, loading } = useAuthStore();
 
   useEffect(() => {
-    const fetchMe = async () => {
-      if (!token) {
-        setLoading(false);
-        return;
-      }
-      try {
-        const res = await fetch(`http://${window.location.hostname}:3001/api/me`, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        if (res.ok) {
-          const data = await res.json();
-          setAuth(data.user, token);
-        } else {
-          logout();
-        }
-      } catch (err) {
-        logout();
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchMe();
-  }, [token, setAuth, logout]);
+    init();
+  }, [init]);
 
   if (loading) {
     return <div className="min-h-screen flex items-center justify-center bg-gray-100">Loading...</div>;

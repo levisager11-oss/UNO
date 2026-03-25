@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useGameStore } from '../store/gameStore';
+import { useAuthStore } from '../store/authStore';
 import type { Card as CardType, Color } from '../store/gameStore';
 import { motion, AnimatePresence, LayoutGroup } from 'framer-motion';
 import { ArrowLeft } from 'lucide-react';
@@ -61,7 +62,8 @@ function HiddenCard({ customInitial, layoutId }: { customInitial?: any, layoutId
 
 export default function GameRoom() {
   const navigate = useNavigate();
-  const { gameState, playCard, drawCard, callUno, socket, leaveLobby, lastUnoCall } = useGameStore();
+  const { gameState, playCard, drawCard, callUno, leaveLobby, lastUnoCall } = useGameStore();
+  const { user } = useAuthStore();
   const [showColorPicker, setShowColorPicker] = useState<CardType | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
@@ -82,12 +84,12 @@ export default function GameRoom() {
     }
   }, [lastUnoCall]);
 
-  if (!gameState || !socket) return null;
+  if (!gameState || !user) return null;
 
-  const me = gameState.players.find(p => p.id === socket.id);
-  const opponents = gameState.players.filter(p => p.id !== socket.id);
+  const me = gameState.players.find(p => p.id === user.id);
+  const opponents = gameState.players.filter(p => p.id !== user.id);
   
-  const isMyTurn = gameState.players[gameState.turnIndex]?.id === socket.id && (me?.hand.length ?? 0) > 0;
+  const isMyTurn = gameState.players[gameState.turnIndex]?.id === user.id && (me?.hand.length ?? 0) > 0;
   const topCard = gameState.discardPile[gameState.discardPile.length - 1];
 
   const handlePlayCard = (card: CardType) => {
@@ -153,7 +155,7 @@ export default function GameRoom() {
                 <>
                   <div className="flex -space-x-8">
                     <AnimatePresence mode='popLayout'>
-                      {op.hand.map((c, i) => (
+                      {op.hand.map((c) => (
                         <HiddenCard 
                           key={c.id}
                           layoutId={c.id} 

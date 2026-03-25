@@ -4,24 +4,18 @@ import { useAuthStore } from '../store/authStore';
 import { UserPlus } from 'lucide-react';
 
 export default function Register() {
+  const [email, setEmail] = useState('');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
-  const setAuth = useAuthStore(state => state.setAuth);
+  const { signUp } = useAuthStore();
   const navigate = useNavigate();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     try {
-      const res = await fetch(`http://${window.location.hostname}:3001/api/register`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to register');
-      setAuth(data.user, data.token);
+      await signUp(email, password, username);
       navigate('/');
     } catch (err: any) {
       setError(err.message);
@@ -39,6 +33,16 @@ export default function Register() {
         <h2 className="text-2xl font-bold text-center mb-6">Register for UNO</h2>
         {error && <div className="bg-red-100 text-red-600 p-3 rounded mb-4">{error}</div>}
         <form onSubmit={handleSubmit}>
+          <div className="mb-4">
+            <label className="block text-gray-700 mb-2">Email</label>
+            <input 
+              type="email" 
+              className="w-full p-2 border rounded focus:outline-none focus:border-green-500"
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              required
+            />
+          </div>
           <div className="mb-4">
             <label className="block text-gray-700 mb-2">Username</label>
             <input 

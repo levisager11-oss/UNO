@@ -6,15 +6,22 @@ import { Users, UserMinus, Bot, Play, ArrowLeft } from 'lucide-react';
 
 export default function LobbyRoom() {
   const navigate = useNavigate();
-  const { currentLobby, gameState, leaveLobby, startGame, addBot, kickPlayer, socket } = useGameStore();
+  const { currentLobby, gameState, leaveLobby, startGame, addBot, kickPlayer, listenToLobby, listenToGame } = useGameStore();
   const user = useAuthStore(state => state.user);
   const [botDifficulty, setBotDifficulty] = useState<'Easy' | 'Medium' | 'Hard' | 'Cheater'>('Medium');
 
   useEffect(() => {
     if (!currentLobby) {
       navigate('/');
+      return;
     }
-  }, [currentLobby, navigate]);
+    const unsubscribeLobby = listenToLobby(currentLobby.id);
+    const unsubscribeGame = listenToGame(currentLobby.id);
+    return () => {
+      unsubscribeLobby();
+      unsubscribeGame();
+    };
+  }, [currentLobby?.id, listenToLobby, listenToGame, navigate]);
 
   useEffect(() => {
     if (gameState?.status === 'playing') {
@@ -24,7 +31,7 @@ export default function LobbyRoom() {
 
   if (!currentLobby || !user) return null;
 
-  const isHost = currentLobby.hostId === socket?.id;
+  const isHost = currentLobby.hostId === user.id;
   const isFull = currentLobby.players.length >= 4;
 
   return (
@@ -61,7 +68,7 @@ export default function LobbyRoom() {
                     )}
                   </div>
                 </div>
-                {isHost && player.id !== socket?.id && (
+                {isHost && player.id !== user.id && (
                   <button
                     onClick={() => kickPlayer(currentLobby.id, player.id)}      
                     className="text-gray-400 hover:text-red-500 transition p-2" 

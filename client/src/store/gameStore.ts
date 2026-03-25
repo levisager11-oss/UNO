@@ -1,5 +1,8 @@
 import { create } from 'zustand';
-import { io, Socket } from 'socket.io-client';
+import { ref, onValue, set as setDb, update, push, remove, get as getDb } from 'firebase/database';
+import { httpsCallable } from 'firebase/functions';
+import { db, functions } from '../firebase';
+import { useAuthStore } from './authStore';
 
 export type Color = 'Red' | 'Green' | 'Blue' | 'Yellow';
 export type Value = '0' | '1' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9' | 'Skip' | 'Reverse' | 'Draw Two' | 'Wild' | 'Wild Draw Four';
@@ -34,115 +37,207 @@ export interface GameState {
 
 export interface Lobby {
   id: string;
+  name: string;
   hostId: string;
+  status: 'waiting' | 'playing' | 'finished';
   players: Omit<Player, 'hand' | 'isUno'>[];
 }
 
 interface GameStore {
-  socket: Socket | null;
   lobbies: Lobby[];
   currentLobby: Lobby | null;
   gameState: GameState | null;
   lastUnoCall: { playerName: string, timestamp: number } | null;
   
-  connect: () => void;
-  disconnect: () => void;
-  createLobby: (name: string) => void;
-  joinLobby: (lobbyId: string, name: string) => void;
-  leaveLobby: (lobbyId: string) => void;
-  startGame: (lobbyId: string) => void;
-  addBot: (lobbyId: string, difficulty: string) => void;
-  kickPlayer: (lobbyId: string, playerId: string) => void;
+  listenToLobbies: () => () => void;
+  listenToLobby: (lobbyId: string) => () => void;
+  listenToGame: (gameId: string) => () => void;
   
-  playCard: (gameId: string, cardId: string, declaredColor?: Color) => void;
-  drawCard: (gameId: string) => void;
-  callUno: (gameId: string) => void;
+  createLobby: (name: string) => Promise<void>;
+  joinLobby: (lobbyId: string) => Promise<void>;
+  leaveLobby: (lobbyId: string) => Promise<void>;
+  startGame: (lobbyId: string) => Promise<void>;
+  addBot: (lobbyId: string, difficulty: string) => Promise<void>;
+  kickPlayer: (lobbyId: string, playerId: string) => Promise<void>;
+  
+  playCard: (gameId: string, cardId: string, declaredColor?: Color) => Promise<void>;
+  drawCard: (gameId: string) => Promise<void>;
+  callUno: (gameId: string) => Promise<void>;
 }
 
-export const useGameStore = create<GameStore>((set, get) => ({
-  socket: null,
+export const useGameStore = create<GameStore>((set) => ({
   lobbies: [],
   currentLobby: null,
   gameState: null,
   lastUnoCall: null,
 
-  connect: () => {
-    if (get().socket) return;
-    const socket = io(`http://${window.location.hostname}:3001`);
-
-    socket.on('connect', () => {
-      socket.emit('get_lobbies');
+  listenToLobbies: () => {
+    return onValue(ref(db, 'lobbies'), (snapshot) => {
+      const data = snapshot.val();
+      if (data) {
+        const lobbies = Object.entries(data).map(([id, val]: [string, any]) => ({
+          ...val,
+          id
+        }));
+        set({ lobbies });
+      } else {
+        set({ lobbies: [] });
+      }
     });
-
-    socket.on('lobbies_update', (lobbies: Lobby[]) => {
-      set({ lobbies });
-    });
-
-    socket.on('lobby_joined', (lobby: Lobby) => {
-      set({ currentLobby: lobby, gameState: null });
-    });
-
-    socket.on('lobby_update', (lobby: Lobby) => {
-      set({ currentLobby: lobby });
-    });
-
-    socket.on('game_started', (gameState: GameState) => {
-      set({ gameState });
-    });
-
-    socket.on('game_state_update', (gameState: GameState) => {
-      set({ gameState });
-    });
-
-    socket.on('uno_called', (data: { playerName: string }) => {
-      set({ lastUnoCall: { playerName: data.playerName, timestamp: Date.now() } });
-    });
-
-    set({ socket });
   },
 
-  disconnect: () => {
-    const { socket } = get();
-    if (socket) {
-      socket.disconnect();
-      set({ socket: null, currentLobby: null, gameState: null });
+  listenToLobby: (lobbyId: string) => {
+    return onValue(ref(db, `lobbies/${lobbyId}`), (snapshot) => {
+      const lobby = snapshot.val();
+      if (lobby) {
+        set({ currentLobby: { ...lobby, id: lobbyId } });
+      }
+    });
+  },
+
+  listenToGame: (gameId: string) => {
+    return onValue(ref(db, `games/${gameId}`), (snapshot) => {
+      const state = snapshot.val();
+      if (state) {
+        set({ gameState: state });
+      }
+    });
+  },
+
+  createLobby: async (name: string) => {
+    const user = useAuthStore.getState().user;
+    if (!user) return;
+    
+    const lobbyRef = push(ref(db, 'lobbies'));
+    await setDb(lobbyRef, {
+      name,
+      hostId: user.id,
+      status: 'waiting',
+      players: [{
+        id: user.id,
+        name: user.username,
+        isBot: false
+      }]
+    });
+  },
+
+  joinLobby: async (lobbyId: string) => {
+    const user = useAuthStore.getState().user;
+    if (!user) return;
+
+    const lobbyRef = ref(db, `lobbies/${lobbyId}`);
+    const snapshot = await getDb(lobbyRef);
+    if (!snapshot.exists()) return;
+
+    const lobby = snapshot.val();
+    const players = [...(lobby.players || [])];
+    if (players.find(p => p.id === user.id)) return;
+
+    players.push({
+      id: user.id,
+      name: user.username,
+      isBot: false
+    });
+
+    await update(lobbyRef, { players });
+  },
+
+  leaveLobby: async (lobbyId: string) => {
+    const user = useAuthStore.getState().user;
+    if (!user) return;
+
+    const lobbyRef = ref(db, `lobbies/${lobbyId}`);
+    const snapshot = await getDb(lobbyRef);
+    if (!snapshot.exists()) return;
+
+    const lobby = snapshot.val();
+    const players = (lobby.players || []).filter((p: any) => p.id !== user.id);
+
+    if (players.length === 0) {
+      await remove(lobbyRef);
+    } else {
+      const updateData: any = { players };
+      if (lobby.hostId === user.id) {
+        updateData.hostId = players[0].id;
+      }
+      await update(lobbyRef, updateData);
     }
-  },
-
-  createLobby: (name: string) => {
-    get().socket?.emit('create_lobby', { name });
-  },
-
-  joinLobby: (lobbyId: string, name: string) => {
-    get().socket?.emit('join_lobby', { lobbyId, name });
-  },
-
-  leaveLobby: (lobbyId: string) => {
-    get().socket?.emit('leave_lobby', { lobbyId });
     set({ currentLobby: null, gameState: null });
   },
 
-  startGame: (lobbyId: string) => {
-    get().socket?.emit('start_game', { lobbyId });
+  startGame: async (lobbyId: string) => {
+    const startGameFn = httpsCallable(functions, 'startGame');
+    await startGameFn({ lobbyId });
   },
 
-  addBot: (lobbyId: string, difficulty: string) => {
-    get().socket?.emit('add_bot', { lobbyId, difficulty });
+  addBot: async (lobbyId: string, difficulty: string) => {
+    const lobbyRef = ref(db, `lobbies/${lobbyId}`);
+    const snapshot = await getDb(lobbyRef);
+    if (!snapshot.exists()) return;
+
+    const lobby = snapshot.val();
+    const players = [...(lobby.players || [])];
+    players.push({
+      id: `bot-${Math.random().toString(36).substring(2, 11)}`,
+      name: `Bot (${difficulty})`,
+      isBot: true,
+      botDifficulty: difficulty as 'Easy' | 'Medium' | 'Hard' | 'Cheater'
+    });
+
+    await update(lobbyRef, { players });
   },
 
-  kickPlayer: (lobbyId: string, playerId: string) => {
-    get().socket?.emit('kick_player', { lobbyId, playerId });
+  kickPlayer: async (lobbyId: string, playerId: string) => {
+     const lobbyRef = ref(db, `lobbies/${lobbyId}`);
+     const snapshot = await getDb(lobbyRef);
+     if (!snapshot.exists()) return;
+
+     const lobby = snapshot.val();
+     const players = (lobby.players || []).filter((p: any) => p.id !== playerId);
+     await update(lobbyRef, { players });
   },
 
-  playCard: (gameId: string, cardId: string, declaredColor?: Color) => {
-    get().socket?.emit('play_card', { gameId, cardId, declaredColor });
+  playCard: async (gameId: string, cardId: string, declaredColor?: Color) => {
+    const playEventFn = httpsCallable(functions, 'playEvent');
+    const user = useAuthStore.getState().user;
+    if (!user) return;
+
+    await playEventFn({
+      gameId,
+      event: {
+        type: 'CARD_PLAYED',
+        playerId: user.id,
+        cardId,
+        declaredColor
+      }
+    });
   },
 
-  drawCard: (gameId: string) => {
-    get().socket?.emit('draw_card', { gameId });
+  drawCard: async (gameId: string) => {
+    const playEventFn = httpsCallable(functions, 'playEvent');
+    const user = useAuthStore.getState().user;
+    if (!user) return;
+
+    await playEventFn({
+      gameId,
+      event: {
+        type: 'DRAW_CARD',
+        playerId: user.id
+      }
+    });
   },
 
-  callUno: (gameId: string) => {
-    get().socket?.emit('call_uno', { gameId });
+  callUno: async (gameId: string) => {
+    const playEventFn = httpsCallable(functions, 'playEvent');
+    const user = useAuthStore.getState().user;
+    if (!user) return;
+
+    await playEventFn({
+      gameId,
+      event: {
+        type: 'CALL_UNO',
+        playerId: user.id
+      }
+    });
   }
 }));
